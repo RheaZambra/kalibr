@@ -8,6 +8,7 @@ import sys
 import subprocess
 import yaml
 import time
+import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 import mpl_toolkits.mplot3d.axes3d as p3
 import io
@@ -148,117 +149,61 @@ def printBaselines(self):
             print(baseline, "[m]")
     
 
+def plotVector(ax, T, color='r', label='Translation Vector'):
+    origin = (0,0,0)
+    direction = T[:, 3]  # Last column as vector
+    ax.quiver(origin[0], origin[1], origin[2], 
+              direction[0], direction[1], direction[2], 
+              color=color, label=label)
+    ax.set_xlim([-0.128, 0.032]) # ADJUST ACCORDING TO PHONE DIMENSIONS
+    ax.set_ylim([-0.010, 0.010]) # ADJUST ACCORDING TO PHONE DIMENSIONS
+    ax.set_zlim([-0.004, 0.004]) # ADJUST ACCORDING TO PHONE DIMENSIONS
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_zlabel('Z')
+    ax.legend()
 
-def generateReport(cself, filename="report.pdf", showOnScreen=True):
+def generateReport(cself, filename="report.pdf", showOnScreen=True, reprojection_sigma=None, camera_config=None):
     figs = list()
     plotter = PlotCollection.PlotCollection("Calibration report")
-    offset = 3010
     
-    #Output calibration results in text form.
-    sstream = StringIO()
-    printResultTxt(cself, sstream)
-    text = [line for line in StringIO(sstream.getvalue())]
-    linesPerPage = 35
+    # Get results as text
+    result_lines = getResultText(cself)
     
-    while True:
-        fig = pl.figure(offset)
-        offset += 1
+    for cidx, cam in enumerate(cself.CameraChain.camList):
+        # Create a figure with three subplots: one for text (left), one for reprojection error plot (upper right), and one for the 3D vector plot (bottom right)
+        fig = plt.figure(figsize=(17, 22))
+        gs = fig.add_gridspec(2, 2, width_ratios=[0.3, 0.7], height_ratios=[0.3, 0.7]) 
 
-        left, width = .05, 1.
-        bottom, height = -.05, 1.
-        right = left + width
-        top = bottom + height
+        ax_text = fig.add_subplot(gs[:, 0])
+        ax_plot = fig.add_subplot(gs[1, 1])
+        ax_vector = fig.add_subplot(gs[0, 1], projection='3d')
+        fig.suptitle(f"Camera {cidx} Calibration Report", fontsize=12)
+        ax_text.axis('off')
         
-        ax = fig.add_axes([.0, .0, 1., 1.])
-        # axes coordinates are 0,0 is bottom left and 1,1 is upper right
-        p = patches.Rectangle((left, bottom), width, height, fill=False, transform=ax.transAxes, \
-                                 clip_on=False, edgecolor="none")
-        ax.add_patch(p)
-        pl.axis('off')
-
-        printText = lambda t: ax.text(left, top, t, fontsize=7, \
-                                     horizontalalignment='left', verticalalignment='top',\
-                                     transform=ax.transAxes, wrap=True)
+        text_content = "\n".join(result_lines[:4])  # Transformation parameters
+        text_content += "\n\n"
+        text_content += "\n".join(result_lines[4:])  # Camera and IMU parameters
         
-        if len(text) > linesPerPage:
-            printText("".join(text[0:linesPerPage]))
-            figs.append(fig)
-            text = text[linesPerPage:]
-        else:
-            printText("".join(text[0:]))
-            figs.append(fig)
-            break
+        ax_text.text(0, 1, text_content, fontsize=10, va='top', ha='left', wrap=True, transform=ax_text.transAxes)
+        title = f"Cam {cidx}: Reprojection Errors"
+        plots.plotReprojectionScatter(cself, cidx, ax=ax_plot, title=title)
+        
+        T = cself.CameraChain.getResultTrafoImuToCam(cidx).T()  # Get the transformation matrix
+        plotVector(ax_vector, T)
+        fig.tight_layout(rect=[0, 0, 1, 0.95])  # Adjust the margins to fit the plots
+        
+        figs.append(fig)
     
-    #plot trajectory
-    f=pl.figure(1003)
-    title="imu0: estimated poses"
-    plotTrajectory(cself, fno=f.number, clearFigure=False, title=title)
-    plotter.add_figure(title, f)
-    figs.append(f)
-    
-    #plot imu stuff (if we have imus)
-    for iidx, imu in enumerate(cself.ImuList):
-
-        f = pl.figure(offset+iidx)
-        plots.plotIMURates(cself, iidx, fno=f.number, noShow=True)
-        plotter.add_figure("imu{0}: measurement rates".format(iidx), f)
-        figs.append(f)
-        offset += len(cself.ImuList)
-
-        f = pl.figure(offset+iidx)
-        plots.plotAccelerations(cself, iidx, fno=f.number, noShow=True)
-        plotter.add_figure("imu{0}: accelerations".format(iidx), f)
-        figs.append(f)
-        offset += len(cself.ImuList)
-
-        f = pl.figure(offset+iidx)
-        plots.plotAccelErrorPerAxis(cself, iidx, fno=f.number, noShow=True)
-        plotter.add_figure("imu{0}: acceleration error".format(iidx), f)
-        figs.append(f)
-        offset += len(cself.ImuList)
-
-        f = pl.figure(offset+iidx)
-        plots.plotAccelBias(cself, iidx, fno=f.number, noShow=True)
-        plotter.add_figure("imu{0}: accelerometer bias".format(iidx), f)
-        figs.append(f)
-        offset += len(cself.ImuList)
-
-        f = pl.figure(offset+iidx)
-        plots.plotAngularVelocities(cself, iidx, fno=f.number, noShow=True)
-        plotter.add_figure("imu{0}: angular velocities".format(iidx), f)
-        figs.append(f)
-        offset += len(cself.ImuList)
-
-        f = pl.figure(offset+iidx)
-        plots.plotGyroErrorPerAxis(cself, iidx, fno=f.number, noShow=True)
-        plotter.add_figure("imu{0}: angular velocity error".format(iidx), f)
-        figs.append(f)
-        offset += len(cself.ImuList)
-
-        f = pl.figure(offset+iidx)
-        plots.plotAngularVelocityBias(cself, iidx, fno=f.number, noShow=True)
-        plotter.add_figure("imu{0}: gyroscope bias".format(iidx), f)
-        figs.append(f)
-        offset += len(cself.ImuList)
-
-    #plot cam stuff
-    if cself.CameraChain:        
-        for cidx, cam in enumerate(cself.CameraChain.camList):
-            f = pl.figure(offset+cidx)
-            title="cam{0}: reprojection errors".format(cidx);
-            plots.plotReprojectionScatter(cself, cidx, fno=f.number, noShow=True, title=title)
-            plotter.add_figure(title, f)
-            figs.append(f)
-            offset += len(cself.CameraChain.camList)
-
-    #write to pdf
-    pdf=PdfPages(filename)
+    # Save all figures to a single PDF
+    pdf = PdfPages(filename)
     for fig in figs:
         pdf.savefig(fig)
     pdf.close()
+    
+    # if showOnScreen:
+    #     plotter.show()
 
-    if showOnScreen:
-        plotter.show()
 
 def exportPoses(cself, filename="poses_imu0.csv"):
     
@@ -281,69 +226,44 @@ def exportPoses(cself, filename="poses_imu0.csv"):
 
 def saveResultTxt(cself, filename='cam_imu_result.txt'):
     f = open(filename, 'w')
-    printResultTxt(cself, stream=f)
+    getResultText(cself, stream=f)
 
-def printResultTxt(cself, stream=sys.stdout):
+def getResultText(cself):
+    import io
+    stream = io.StringIO()
     
-    print("Calibration results", file=stream)
-    print("===================", file=stream)   
-    printErrorStatistics(cself, stream)
-  
     # Calibration results
     nCams = len(cself.CameraChain.camList)
-    for camNr in range(0,nCams):
+    result_lines = []
+    
+    for camNr in range(nCams):
         T = cself.CameraChain.getResultTrafoImuToCam(camNr)
-        print("", file=stream)
-        print("Transformation (cam{0}):".format(camNr), file=stream)
-        print("-----------------------", file=stream)
-        print("T_ci:  (imu0 to cam{0}): ".format(camNr), file=stream)   
-        print(T.T(), file=stream)
-        print("", file=stream)
-        print("T_ic:  (cam{0} to imu0): ".format(camNr), file=stream)   
-        print(T.inverse().T(), file=stream)
-    
-        # Time
-        print("", file=stream)
-        print("timeshift cam{0} to imu0: [s] (t_imu = t_cam + shift)".format(camNr), file=stream)
-        print(cself.CameraChain.getResultTimeShift(camNr), file=stream)
-        print("", file=stream)
+        result_lines.append(f"T_ic:  (cam{camNr} to imu0): \n{T.inverse().T()}\n")
+        result_lines.append(f"timeshift cam{camNr} to imu0 [s] (t_imu = t_cam + shift): {cself.CameraChain.getResultTimeShift(camNr)}\n")
 
-    #print all baselines in the camera chain
-    if nCams > 1:
-        print("Baselines:", file=stream)
-        print("----------", file=stream)
+    for camNr, cam in enumerate(cself.CameraChain.camList):
+        result_lines.append(f"cam{camNr}\n-----\n")
+        cam_config = io.StringIO()
+        cam.camConfig.printDetails(cam_config)
+        result_lines.append(cam_config.getvalue() + "\n")
 
-        for camNr in range(0,nCams-1):
-            T, baseline = cself.CameraChain.getResultBaseline(camNr, camNr+1)
-            print("Baseline (cam{0} to cam{1}): ".format(camNr, camNr+1), file=stream)
-            print(T.T(), file=stream)
-            print("baseline norm: ", baseline,  "[m]", file=stream)
-            print("", file=stream)
-    
-    # Gravity
-    print("", file=stream)
-    print("Gravity vector in target coords: [m/s^2]", file=stream)
-    print(cself.gravityDv.toEuclidean(), file=stream)
-    
-    print("", file=stream)
-    print("", file=stream)
-    print("Calibration configuration", file=stream)
-    print("=========================", file=stream)
-    print("", file=stream)
+        target_config = io.StringIO()
+        cam.targetConfig.printDetails(target_config)
+        result_lines.append(target_config.getvalue() + "\n")
 
-    for camNr, cam in enumerate( cself.CameraChain.camList ):
-        print("cam{0}".format(camNr), file=stream)
-        print("-----", file=stream)
-        cam.camConfig.printDetails(stream)
-        cam.targetConfig.printDetails(stream)
-        print("", file=stream)
+    result_lines.append("IMU configuration: \n")
     
-    print("", file=stream)
-    print("", file=stream)
-    print("IMU configuration", file=stream)
-    print("=================", file=stream)
-    print("", file=stream)
-    for (imuNr, imu) in enumerate(cself.ImuList):
-        print("IMU{0}:\n".format(imuNr), "----------------------------", file=stream)
-        imu.getImuConfig().printDetails(stream)
-        print("", file=stream)
+    for imuNr, imu in enumerate(cself.ImuList):
+        imu_config = io.StringIO()  # Create a StringIO object to capture the output
+        imu.getImuConfig().printDetails(imu_config)  # Print details to the StringIO object
+        imu_config_content = imu_config.getvalue()
+
+        # Filter the content to get only the desired sections
+        capture = False
+        for line in imu_config_content.splitlines():
+            if "Accelerometer:" in line or "Gyroscope:" in line:
+                capture = True
+            if capture:
+                result_lines.append(line)
+    
+    return result_lines

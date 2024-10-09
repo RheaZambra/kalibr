@@ -216,22 +216,10 @@ def main():
     print("")
 
     bagtag = os.path.splitext(parsed.bagfile[0])[0]
-    yamlFilename = bagtag + "-camchain-imucam.yaml"
-    iCal.saveCamChainParametersYaml(yamlFilename)
-    print("Results written to:")
-    print("  Saving camera chain calibration to file: {0}".format(yamlFilename))
-
-    yamlFilename = bagtag + "-imu.yaml"
-    iCal.saveImuSetParametersYaml(yamlFilename)
-    print("  Saving imu calibration to file: {0}".format(yamlFilename))
-
-    resultFileTxt = bagtag + "-results-imucam.txt"
-    util.saveResultTxt(iCal, filename=resultFileTxt)
-    print("  Detailed results written to file: {0}".format(resultFileTxt))
-
     print("")
     print("Generating result report...")
     reportFile = bagtag + "-report-imucam.pdf"
+    parsed.dontShowReport = True
     util.generateReport(iCal, filename=reportFile, showOnScreen=not parsed.dontShowReport)
     print("  Report written to {0}".format(reportFile))
     print("")

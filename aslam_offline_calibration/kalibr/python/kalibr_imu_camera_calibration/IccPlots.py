@@ -253,40 +253,46 @@ def plotVectorOverTime(times, values, title="", ylabel="", label="", fno=1, clea
         if label != "":
             pl.legend()
 
-def plotReprojectionScatter(cself, cam_id, fno=1, clearFigure=True, noShow=False, title=""):
+def plotReprojectionScatter(cself, cam_id, ax=None, title="", noShow=False):
     cam = cself.CameraChain.camList[cam_id]
     
-    #create figure
-    f = pl.figure(fno)
-    if clearFigure:    
-        f.clf()
-    f.suptitle(title)
-    
+    # Create a new figure and axis if not provided
+    if ax is None:
+        f, ax = pl.subplots()
+        f.suptitle(title)
+    else:
+        ax.clear()
+        ax.set_title(title)
+
     numImages = len(cam.allReprojectionErrors)
-    values = np.arange(numImages)/np.double(numImages)
-    cmap = pl.cm.jet(values,alpha=0.5)
+    values = np.arange(numImages) / np.double(numImages)
+    cmap = pl.cm.jet(values, alpha=0.5)
 
-    #reprojection errors scatter plot
+    # Reprojection errors scatter plot
     for image_id, rerrs_image in enumerate(cam.allReprojectionErrors):
-        color = cmap[image_id,:]
+        color = cmap[image_id, :]
         rerrs = np.array([rerr.error() for rerr in rerrs_image])  
-        pl.plot(rerrs[:,0], rerrs[:,1], 'x', lw=3, mew=3, color=color)
+        ax.plot(rerrs[:, 0], rerrs[:, 1], 'x', lw=3, mew=3, color=color)
 
-    #A red uncertainty bound would be more consistent, but it is less well visible.
-    uncertainty_bound = pl.Circle((0,0), 3. * cam.cornerUncertainty, color='k', linestyle='dashed', \
+    # Add uncertainty bound
+    uncertainty_bound = pl.Circle((0, 0), 3. * cam.cornerUncertainty, color='k', linestyle='dashed',
                                   fill=False, lw=2, zorder=len(cam.allReprojectionErrors))
-    f.gca().add_artist(uncertainty_bound)
+    ax.add_artist(uncertainty_bound)
 
-    pl.axis('equal')
-    pl.grid('on')
-    pl.xlabel('error x ($pix$)')
-    pl.ylabel('error y ($pix$)')
-    SM = pl.cm.ScalarMappable(pl.cm.colors.Normalize(0.0,numImages), pl.cm.jet)
-    SM.set_array(np.arange(numImages));
-    cb = pl.colorbar(SM)
+    ax.axis('equal')
+    ax.grid('on')
+    ax.set_xlabel('error x ($pix$)')
+    ax.set_ylabel('error y ($pix$)')
+    SM = pl.cm.ScalarMappable(pl.cm.colors.Normalize(0.0, numImages), pl.cm.jet)
+    SM.set_array(np.arange(numImages))
+    cb = pl.colorbar(SM, ax=ax)
     cb.set_label('image index')
+
     if not noShow:
-        pl.show()
+        pl.show(block=False)
+        pl.pause(2)
+        pl.close('all')
+
 
 class CameraPlot:
     def __init__(self, fig,  targetPoints, camSize):
